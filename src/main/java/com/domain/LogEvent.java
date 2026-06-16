@@ -1,26 +1,16 @@
 package com.domain;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "log_events", indexes = {
-
-    @Index(name = "idx_log_src_ip", columnList = "src_ip"),
-    @Index(name = "idx_log_occurred_at", columnList = "occurred_at"),
-    @Index(name = "idx_log_status", columnList = "status_code")
-
-})
+@Table(name = "log_events")
 @Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class LogEvent {
 
     @Id
