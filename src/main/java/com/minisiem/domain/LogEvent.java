@@ -1,4 +1,4 @@
-package com.domain;
+package com.minisiem.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
