@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS correlation_rules (
-                                                 id              BIGSERIAL    PRIMARY KEY,
-                                                 rule_name       VARCHAR(100) NOT NULL,
+    id              BIGSERIAL    PRIMARY KEY,
+    rule_name       VARCHAR(100) NOT NULL,
     condition_type  VARCHAR(30)  NOT NULL,
     threshold       INT          NOT NULL,
     window_seconds  INT          NOT NULL,
@@ -18,5 +18,5 @@ COMMENT ON COLUMN correlation_rules.severity        IS 'LOW | MEDIUM | HIGH | CR
 
 -- 초기 룰 2개 삽입
 INSERT INTO correlation_rules (rule_name, condition_type, threshold, window_seconds, severity, description) VALUES
-                                                                                                                ('동일 IP 다발성 요청', 'SAME_IP_COUNT', 10, 300, 'MEDIUM', '5분 내 동일 IP에서 10회 이상 요청 발생'),
-                                                                                                                ('404 다발성 발생', 'STATUS_CODE_COUNT', 20, 60, 'LOW', '1분 내 404 응답 20회 이상 (스캐닝 의심)');
+                            ('동일 IP 다발성 요청', 'SAME_IP_COUNT', 10, 300, 'MEDIUM', '5분 내 동일 IP에서 10회 이상 요청 발생'),
+                            ('404 다발성 발생', 'STATUS_CODE_COUNT', 20, 60, 'LOW', '1분 내 404 응답 20회 이상 (스캐닝 의심)');
