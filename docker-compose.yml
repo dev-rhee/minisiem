@@ -3,6 +3,8 @@ services:
     image: postgres:15
     container_name: siem-db
     environment:
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,6 +25,8 @@ services:
       db:
         condition: service_healthy
     environment:
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
