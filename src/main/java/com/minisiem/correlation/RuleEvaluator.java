@@ -18,6 +18,7 @@ public class RuleEvaluator {
     private final CorrelationRuleRepository ruleRepository;
     private final LogEventRepository logEventRepository;
     private final AlertRepository alertRepository;
+    private final AlertEventPublisher alertEventPublisher;
 
     @Transactional
     public void evaluateAll() {
@@ -86,7 +87,9 @@ public class RuleEvaluator {
                 .triggeredLogIds(logIds.stream().map(String::valueOf).collect(Collectors.joining(",")))
                 .build();
 
-        alertRepository.save(alert);
+        Alert saved = alertRepository.save(alert);
+        alertEventPublisher.publish(saved); // 추가 — 저장 후 바로 push
         log.info("경보 발생 - 룰: {}, IP: {}, 건수: {}", rule.getRuleName(), srcIp, occurredCount);
     }
+
 }
