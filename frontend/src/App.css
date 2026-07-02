@@ -1,0 +1,92 @@
+.app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: #1e2130;
+    border-bottom: 1px solid #2d3148;
+}
+
+.header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.status {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.status.connected { color: #22c55e; }
+.status.disconnected { color: #ef4444; }
+
+.main {
+    flex: 1;
+    padding: 24px;
+}
+
+.alert-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 16px;
+}
+
+.alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.empty {
+    text-align: center;
+    color: #475569;
+    padding: 48px;
+}
+
+.alert-card {
+    background: #1e2130;
+    border: 1px solid #2d3148;
+    border-radius: 8px;
+    padding: 14px 18px;
+}
+
+.alert-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.severity-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #fff;
+}
+
+.rule-name {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+}
+
+.alert-time {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.alert-body {
+    display: flex;
+    gap: 20px;
+    font-size: 13px;
+    color: #94a3b8;
+}
