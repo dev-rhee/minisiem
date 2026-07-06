@@ -1,8 +1,10 @@
 package com.minisiem.collector;
 
+import com.minisiem.config.LogSourceConfig;
 import com.minisiem.domain.LogEvent;
 import com.minisiem.domain.LogEventRepository;
-import com.minisiem.parser.NginxLogParser;
+import com.minisiem.parser.LogParser;
+import com.minisiem.parser.LogParserRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -12,7 +14,6 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -33,11 +34,9 @@ public class LogCollectJob {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
     private final LogFileReader logFileReader;
-    private final NginxLogParser nginxLogParser;
+    private final LogParserRegistry parserRegistry;
     private final LogEventRepository logEventRepository;
-
-    @Value("${siem.log.watch-dir}")
-    private String watchDir;
+    private final LogSourceConfig logSourceConfig;
 
     @Bean
     public Job collectLogJob() {
@@ -56,26 +55,61 @@ public class LogCollectJob {
     @Bean
     public Tasklet collectTasklet() {
         return (contribution, chunkContext) -> {
-            try (Stream<Path> files = Files.list(Paths.get(watchDir))) {
-                files.filter(p -> p.toString().endsWith(".log"))
-                        .forEach(this::processFile);
-            } catch (IOException e) {
-                log.error("디렉토리 접근 실패: {}", watchDir, e);
+            List<LogSourceConfig.LogSource> sources = logSourceConfig.getSources();
+            if (sources == null || sources.isEmpty()) {
+                log.warn("수집할 로그 소스가 설정되지 않았습니다. application.yml을 확인하세요.");
+                return RepeatStatus.FINISHED;
+            }
+
+            for (LogSourceConfig.LogSource source : sources) {
+                Optional<LogParser> parser = parserRegistry.getParser(source.getType());
+                if (parser.isEmpty()) continue;
+
+                processSource(source, parser.get());
             }
             return RepeatStatus.FINISHED;
         };
     }
 
-    private void processFile(Path path) {
-        List<LogEvent> events = logFileReader.readNewLines(path).stream()
-                .map(nginxLogParser::parse)
+    private void processSource(LogSourceConfig.LogSource source, LogParser parser) {
+        Path path = Paths.get(source.getPath());
+
+        if (!Files.exists(path)) {
+            log.warn("경로가 존재하지 않습니다: {}", path);
+            return;
+        }
+
+        // 디렉토리면 하위 .log 파일들을 순회, 파일이면 직접 처리
+        if (Files.isDirectory(path)) {
+            String pattern = source.getPattern() != null ? source.getPattern() : "*.log";
+            try (Stream<Path> files = Files.list(path)) {
+                files.filter(p -> matchesPattern(p.getFileName().toString(), pattern))
+                        .forEach(file -> processFile(file, parser));
+            } catch (IOException e) {
+                log.error("디렉토리 접근 실패: {}", path, e);
+            }
+        } else {
+            processFile(path, parser);
+        }
+    }
+
+    private boolean matchesPattern(String fileName, String pattern) {
+        // 간단한 와일드카드 매칭 (*.log, access_*.log 등)
+        String regex = pattern.replace(".", "\\.").replace("*", ".*");
+        return fileName.matches(regex);
+    }
+
+    private void processFile(Path filePath, LogParser parser) {
+        List<LogEvent> events = logFileReader.readNewLines(filePath).stream()
+                .map(parser::parse)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .toList();
 
         if (!events.isEmpty()) {
             logEventRepository.saveAll(events);
-            log.info("[{}] {}건 저장 완료", path.getFileName(), events.size());
+            log.info("[{}][{}] {}건 저장", parser.getSupportedType(),
+                    filePath.getFileName(), events.size());
         }
     }
 }
