@@ -48,11 +48,4 @@ frontend/src/
 └── App.js        SSE 실시간 연결
 ```
 
-## 실행
-
-```bash
-docker compose up -d
-./gradlew bootRun
-```
-
 실행 후 http://localhost:8080/swagger-ui.html 에서 API 확인 가능합니다.
