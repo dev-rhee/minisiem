@@ -16,7 +16,9 @@ import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataAccessException;
 import org.springframework.transaction.PlatformTransactionManager;
+
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -37,6 +39,12 @@ public class LogCollectJob {
     private final LogParserRegistry parserRegistry;
     private final LogEventRepository logEventRepository;
     private final LogSourceConfig logSourceConfig;
+
+    // Chunk 방식 구성요소
+    private final NginxLogItemReader nginxLogItemReader;
+    private final NginxLogItemProcessor nginxLogItemProcessor;
+    private final LogEventItemWriter logEventItemWriter;
+    private final LogCollectSkipListener logCollectSkipListener;
 
     @Bean
     public Job collectLogJob() {
@@ -98,6 +106,33 @@ public class LogCollectJob {
         String regex = pattern.replace(".", "\\.").replace("*", ".*");
         return fileName.matches(regex);
     }
+
+    // ── Chunk 방식 ──────────────────────────────────────────────────────────
+
+    @Bean
+    public Job collectChunkJob() {
+        return new JobBuilder("collectChunkJob", jobRepository)
+                .start(collectChunkStep())
+                .build();
+    }
+
+    @Bean
+    public Step collectChunkStep() {
+        return new StepBuilder("collectChunkStep", jobRepository)
+                .<String, LogEvent>chunk(100, transactionManager)
+                .reader(nginxLogItemReader)
+                .processor(nginxLogItemProcessor)
+                .writer(logEventItemWriter)
+                .faultTolerant()
+                .skip(LogParseException.class)
+                .skipLimit(100)
+                .retry(DataAccessException.class)
+                .retryLimit(3)
+                .listener(logCollectSkipListener)
+                .build();
+    }
+
+    // ── 공통 유틸 ────────────────────────────────────────────────────────────
 
     private void processFile(Path filePath, LogParser parser) {
         List<LogEvent> events = logFileReader.readNewLines(filePath).stream()
