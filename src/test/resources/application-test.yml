@@ -26,3 +26,6 @@ siem:
       - path: /tmp/test
         type: NGINX
         pattern: "*.log"
+  admin:
+    username: admin
+    password: admin1234
