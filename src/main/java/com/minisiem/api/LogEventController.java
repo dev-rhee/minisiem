@@ -6,6 +6,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -62,6 +65,15 @@ public class LogEventController {
         return ResponseEntity.ok(
                 logEventRepository.findByStatusCodeOrderByOccurredAtDesc(code)
         );
+    }
+
+    @GetMapping("/recent")
+    @Operation(summary = "최근 로그 조회", description = "occurred_at 기준 최신 N건을 반환합니다.")
+    public ResponseEntity<List<LogEvent>> getRecent(
+            @RequestParam(defaultValue = "100") int limit
+    ) {
+        Pageable pageable = PageRequest.of(0, limit, Sort.by("occurredAt").descending());
+        return ResponseEntity.ok(logEventRepository.findAll(pageable).getContent());
     }
 
     @GetMapping("/stats/top-ips")
