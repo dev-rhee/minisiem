@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -101,14 +102,22 @@ public class LogEventController {
             statusMax = statusMin != null ? statusMin + 99 : null;
         }
 
+        Specification<LogEvent> spec = Specification.where(null);
+        if (hasValue(srcIp))  { final String v = srcIp.trim();  spec = spec.and((r,q,cb) -> cb.equal(r.get("srcIp"), v)); }
+        if (hasValue(method)) { final String v = method;        spec = spec.and((r,q,cb) -> cb.equal(r.get("method"), v)); }
+        if (statusMin != null){ final int min = statusMin;      spec = spec.and((r,q,cb) -> cb.greaterThanOrEqualTo(r.get("statusCode"), min)); }
+        if (statusMax != null){ final int max = statusMax;      spec = spec.and((r,q,cb) -> cb.lessThanOrEqualTo(r.get("statusCode"), max)); }
+        if (hasValue(uri))    { final String v = "%" + uri.trim().toLowerCase() + "%";
+                                                                 spec = spec.and((r,q,cb) -> cb.like(cb.lower(r.get("requestUri")), v)); }
+        if (from != null)     spec = spec.and((r,q,cb) -> cb.greaterThanOrEqualTo(r.get("occurredAt"), from));
+        if (to != null)       spec = spec.and((r,q,cb) -> cb.lessThanOrEqualTo(r.get("occurredAt"), to));
+
         Pageable pageable = PageRequest.of(0, limit, Sort.by("occurredAt").descending());
-        return ResponseEntity.ok(logEventRepository.search(
-                blank(srcIp), blank(method), statusMin, statusMax, blank(uri), from, to, pageable
-        ));
+        return ResponseEntity.ok(logEventRepository.findAll(spec, pageable).getContent());
     }
 
-    private static String blank(String s) {
-        return (s == null || s.isBlank()) ? null : s;
+    private static boolean hasValue(String s) {
+        return s != null && !s.isBlank();
     }
 
     @GetMapping("/stats/top-ips")

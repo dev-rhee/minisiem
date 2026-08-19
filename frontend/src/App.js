@@ -4,6 +4,20 @@ import AlertStats from './components/AlertStats';
 import './App.css';
 
 const API = 'http://localhost:8080';
+const AUTH_KEY = 'siem_auth';
+
+// 모든 API 요청에 Authorization 헤더를 포함하는 헬퍼
+function apiFetch(url, options = {}) {
+    const auth = sessionStorage.getItem(AUTH_KEY);
+    return fetch(url, {
+        ...options,
+        headers: {
+            ...(options.headers || {}),
+            ...(auth ? { 'Authorization': auth } : {}),
+        },
+        credentials: 'include',
+    });
+}
 
 function LoginForm({ onLogin }) {
     const [username, setUsername] = useState('');
@@ -16,14 +30,16 @@ function LoginForm({ onLogin }) {
         setLoading(true);
         setError('');
 
+        const auth = `Basic ${btoa(`${username}:${password}`)}`;
         const res = await fetch(`${API}/api/v1/alerts`, {
-            headers: { 'Authorization': `Basic ${btoa(`${username}:${password}`)}` },
+            headers: { 'Authorization': auth },
             credentials: 'include',
         }).catch(() => null);
 
         setLoading(false);
 
         if (res?.ok) {
+            sessionStorage.setItem(AUTH_KEY, auth);
             onLogin();
         } else {
             setError('아이디 또는 비밀번호가 틀렸습니다');
@@ -93,16 +109,17 @@ function Dashboard() {
     const [recentLogs, setRecentLogs] = useState([]);
     const [newLogIds, setNewLogIds]   = useState(new Set());
     const lastFetchRef = useRef(null);
+    const esRef        = useRef(null);
 
     const [filterIp,     setFilterIp]     = useState('');
     const [filterMethod, setFilterMethod] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [filterUri,    setFilterUri]    = useState('');
-    const [searchResults, setSearchResults] = useState(null); // null = 실시간 모드
+    const [searchResults, setSearchResults] = useState(null);
     const [searching,    setSearching]    = useState(false);
 
     const fetchTopIps = () => {
-        fetch(`${API}/api/v1/logs/stats/top-ips`, { credentials: 'include' })
+        apiFetch(`${API}/api/v1/logs/stats/top-ips`)
             .then(res => res.json())
             .then(setTopIps)
             .catch(() => {});
@@ -110,9 +127,9 @@ function Dashboard() {
 
     const fetchRecentLogs = async () => {
         try {
-            const res = await fetch(`${API}/api/v1/logs/recent?limit=100`, { credentials: 'include' });
+            const res = await apiFetch(`${API}/api/v1/logs/recent?limit=100`);
             if (!res.ok) return;
-            const data = await res.json(); // occurred_at DESC 정렬
+            const data = await res.json();
 
             if (lastFetchRef.current) {
                 const prevIds = lastFetchRef.current;
@@ -127,28 +144,42 @@ function Dashboard() {
         } catch {}
     };
 
+    // SSE 연결 (BasicAuth 요청으로 세션을 먼저 갱신한 뒤 연결)
+    const connectSSE = () => {
+        apiFetch(`${API}/api/v1/alerts`).then(res => {
+            if (!res.ok) return;
+            esRef.current?.close();
+            const es = new EventSource(`${API}/api/v1/alerts/stream`, { withCredentials: true });
+            esRef.current = es;
+            es.addEventListener('connect', () => setConnected(true));
+            es.addEventListener('alert', (e) => {
+                const alert = JSON.parse(e.data);
+                setAlerts(prev => [alert, ...prev].slice(0, 50));
+                fetchTopIps();
+            });
+            es.onerror = () => {
+                setConnected(false);
+                es.close();
+                setTimeout(connectSSE, 5000);
+            };
+        }).catch(() => setTimeout(connectSSE, 5000));
+    };
+
     useEffect(() => {
-        fetch(`${API}/api/v1/alerts`, { credentials: 'include' })
+        apiFetch(`${API}/api/v1/alerts`)
             .then(res => res.json())
             .then(data => setAlerts(data.slice(0, 50)))
             .catch(() => {});
 
         fetchTopIps();
         fetchRecentLogs();
-        const topIpInterval  = setInterval(fetchTopIps, 30_000);
-        const logInterval    = setInterval(fetchRecentLogs, 5_000);
+        const topIpInterval = setInterval(fetchTopIps, 30_000);
+        const logInterval   = setInterval(fetchRecentLogs, 5_000);
 
-        const es = new EventSource(`${API}/api/v1/alerts/stream`, { withCredentials: true });
-        es.addEventListener('connect', () => setConnected(true));
-        es.addEventListener('alert', (e) => {
-            const alert = JSON.parse(e.data);
-            setAlerts(prev => [alert, ...prev].slice(0, 50));
-            fetchTopIps();
-        });
-        es.onerror = () => setConnected(false);
+        connectSSE();
 
         return () => {
-            es.close();
+            esRef.current?.close();
             clearInterval(topIpInterval);
             clearInterval(logInterval);
         };
@@ -159,11 +190,11 @@ function Dashboard() {
         setSearching(true);
         try {
             const params = new URLSearchParams({ limit: 200 });
-            if (filterIp.trim())     params.set('srcIp',      filterIp.trim());
-            if (filterMethod)        params.set('method',      filterMethod);
-            if (filterStatus)        params.set('statusClass', filterStatus);
-            if (filterUri.trim())    params.set('uri',         filterUri.trim());
-            const res = await fetch(`${API}/api/v1/logs/search?${params}`, { credentials: 'include' });
+            if (filterIp.trim())  params.set('srcIp',      filterIp.trim());
+            if (filterMethod)     params.set('method',      filterMethod);
+            if (filterStatus)     params.set('statusClass', filterStatus);
+            if (filterUri.trim()) params.set('uri',         filterUri.trim());
+            const res = await apiFetch(`${API}/api/v1/logs/search?${params}`);
             if (res.ok) setSearchResults(await res.json());
         } catch {}
         setSearching(false);
@@ -179,9 +210,9 @@ function Dashboard() {
 
     const updateAlertStatus = async (id, newStatus) => {
         try {
-            const res = await fetch(
+            const res = await apiFetch(
                 `${API}/api/v1/alerts/${id}/status?status=${newStatus}`,
-                { method: 'PATCH', credentials: 'include' }
+                { method: 'PATCH' }
             );
             if (!res.ok) return;
             const updated = await res.json();
@@ -365,12 +396,15 @@ export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [checking, setChecking]     = useState(true);
 
-    // 새로고침해도 세션이 살아있으면 로그인 유지
     useEffect(() => {
-        fetch(`${API}/api/v1/alerts`, { credentials: 'include' })
-            .then(res => {
-                if (res.ok) setIsLoggedIn(true);
-            })
+        const auth = sessionStorage.getItem(AUTH_KEY);
+        if (!auth) { setChecking(false); return; }
+
+        fetch(`${API}/api/v1/alerts`, {
+            headers: { 'Authorization': auth },
+            credentials: 'include',
+        })
+            .then(res => { if (res.ok) setIsLoggedIn(true); })
             .catch(() => {})
             .finally(() => setChecking(false));
     }, []);
