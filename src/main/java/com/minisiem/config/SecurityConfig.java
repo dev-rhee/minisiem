@@ -1,5 +1,6 @@
 package com.minisiem.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,7 +39,11 @@ public class SecurityConfig {
                 ).permitAll()
                 .anyRequest().authenticated()
             )
-            .httpBasic(Customizer.withDefaults());
+            .httpBasic(basic -> basic
+                .authenticationEntryPoint((request, response, ex) ->
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
+                )
+            );
 
         return http.build();
     }

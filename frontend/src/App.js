@@ -147,6 +147,18 @@ function Dashboard() {
         };
     }, []);
 
+    const updateAlertStatus = async (id, newStatus) => {
+        try {
+            const res = await fetch(
+                `${API}/api/v1/alerts/${id}/status?status=${newStatus}`,
+                { method: 'PATCH', credentials: 'include' }
+            );
+            if (!res.ok) return;
+            const updated = await res.json();
+            setAlerts(prev => prev.map(a => a.id === id ? updated : a));
+        } catch {}
+    };
+
     const severityColor = (s) => ({
         CRITICAL: '#ef4444',
         HIGH:     '#f97316',
@@ -181,7 +193,8 @@ function Dashboard() {
                     <div className="alert-list">
                         {alerts.length === 0 && <div className="empty">경보가 없습니다</div>}
                         {alerts.map((alert, idx) => (
-                            <div key={alert.id ?? idx} className="alert-card">
+                            <div key={alert.id ?? idx}
+                                 className={`alert-card${alert.status === 'RESOLVED' ? ' alert-resolved' : ''}`}>
                                 <div className="alert-header">
                                     <span className="severity-badge"
                                           style={{ background: severityColor(alert.severity) }}>
@@ -197,7 +210,23 @@ function Dashboard() {
                                 <div className="alert-body">
                                     <span>IP: {alert.srcIp ?? '-'}</span>
                                     <span>발생 건수: {alert.occurredCount}</span>
-                                    <span>상태: {alert.status}</span>
+                                    <span className={`alert-status alert-status-${alert.status}`}>
+                                        {alert.status}
+                                    </span>
+                                    <div className="alert-actions">
+                                        {alert.status === 'OPEN' && (
+                                            <button className="btn-ack"
+                                                    onClick={() => updateAlertStatus(alert.id, 'ACKNOWLEDGED')}>
+                                                확인
+                                            </button>
+                                        )}
+                                        {alert.status === 'ACKNOWLEDGED' && (
+                                            <button className="btn-resolve"
+                                                    onClick={() => updateAlertStatus(alert.id, 'RESOLVED')}>
+                                                해결
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         ))}
