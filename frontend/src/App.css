@@ -143,6 +143,112 @@
     padding: 48px;
 }
 
+/* 실시간 로그 테이블 */
+.log-count {
+    font-size: 12px;
+    font-weight: 400;
+    color: #475569;
+    margin-left: 10px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.log-table-wrap {
+    overflow-x: auto;
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid #2d3148;
+    border-radius: 8px;
+}
+
+.log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 18px;
+    table-layout: fixed;
+}
+
+.log-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #151724;
+}
+
+.log-table th {
+    padding: 10px 14px;
+    text-align: left;
+    color: #475569;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2d3148;
+    white-space: nowrap;
+}
+
+.log-table td {
+    padding: 9px 14px;
+    color: #94a3b8;
+    border-bottom: 1px solid #1e2130;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.log-table tr:hover td {
+    background: #1e2130;
+    color: #cbd5e1;
+}
+
+.log-table th:nth-child(1), .log-table td:nth-child(1) { width: 240px; }
+.log-table th:nth-child(2), .log-table td:nth-child(2) { width: 180px; }
+.log-table th:nth-child(3), .log-table td:nth-child(3) { width: 100px; }
+.log-table th:nth-child(4), .log-table td:nth-child(4) { width: auto; }
+.log-table th:nth-child(5), .log-table td:nth-child(5) { width: 100px; }
+.log-table th:nth-child(6), .log-table td:nth-child(6) { width: 100px; }
+.log-table th:nth-child(7), .log-table td:nth-child(7) { width: 280px; }
+
+.log-time { color: #64748b !important; font-family: monospace; font-size: 17px; }
+.log-ip   { color: #e2e8f0 !important; font-family: monospace; font-size: 17px; }
+.log-uri  { color: #94a3b8 !important; }
+.log-bytes{ color: #64748b !important; font-family: monospace; }
+.log-ua   { color: #475569 !important; font-size: 17px; }
+
+.method-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.03em;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 17px;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.status-2xx { background: #14532d; color: #4ade80; }
+.status-3xx { background: #1e3a5f; color: #60a5fa; }
+.status-4xx { background: #431407; color: #fb923c; }
+.status-5xx { background: #450a0a; color: #f87171; }
+
+@keyframes fadeInRow {
+    from { background-color: rgba(79, 110, 247, 0.18); }
+    to   { background-color: transparent; }
+}
+
+.log-row-new td {
+    animation: fadeInRow 3s ease-out forwards;
+}
+
 /* 로그인 */
 .login-wrap {
     min-height: 100vh;

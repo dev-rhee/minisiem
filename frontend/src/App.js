@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TopIpChart from './components/TopIpChart';
 import AlertStats from './components/AlertStats';
 import './App.css';
@@ -56,16 +56,68 @@ function LoginForm({ onLogin }) {
     );
 }
 
+const METHOD_COLORS = {
+    GET:    '#3b82f6',
+    POST:   '#22c55e',
+    PUT:    '#f59e0b',
+    DELETE: '#ef4444',
+    PATCH:  '#a855f7',
+};
+
+function statusClass(code) {
+    if (!code) return '';
+    if (code < 300) return 'status-2xx';
+    if (code < 400) return 'status-3xx';
+    if (code < 500) return 'status-4xx';
+    return 'status-5xx';
+}
+
+function formatBytes(n) {
+    if (!n) return '-';
+    if (n < 1024) return `${n}B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+    return `${(n / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function formatTime(s) {
+    if (!s) return '-';
+    const d = new Date(s);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function Dashboard() {
-    const [alerts, setAlerts]     = useState([]);
-    const [topIps, setTopIps]     = useState([]);
+    const [alerts, setAlerts]       = useState([]);
+    const [topIps, setTopIps]       = useState([]);
     const [connected, setConnected] = useState(false);
+    const [recentLogs, setRecentLogs] = useState([]);
+    const [newLogIds, setNewLogIds]   = useState(new Set());
+    const lastFetchRef = useRef(null);
 
     const fetchTopIps = () => {
         fetch(`${API}/api/v1/logs/stats/top-ips`, { credentials: 'include' })
             .then(res => res.json())
             .then(setTopIps)
             .catch(() => {});
+    };
+
+    const fetchRecentLogs = async () => {
+        try {
+            const res = await fetch(`${API}/api/v1/logs/recent?limit=100`, { credentials: 'include' });
+            if (!res.ok) return;
+            const data = await res.json(); // occurred_at DESC 정렬
+
+            if (lastFetchRef.current) {
+                const prevIds = lastFetchRef.current;
+                const fresh = new Set(data.filter(l => !prevIds.has(l.id)).map(l => l.id));
+                if (fresh.size > 0) {
+                    setNewLogIds(fresh);
+                    setTimeout(() => setNewLogIds(new Set()), 3000);
+                }
+            }
+            lastFetchRef.current = new Set(data.map(l => l.id));
+            setRecentLogs(data);
+        } catch {}
     };
 
     useEffect(() => {
@@ -75,7 +127,9 @@ function Dashboard() {
             .catch(() => {});
 
         fetchTopIps();
-        const interval = setInterval(fetchTopIps, 30_000);
+        fetchRecentLogs();
+        const topIpInterval  = setInterval(fetchTopIps, 30_000);
+        const logInterval    = setInterval(fetchRecentLogs, 5_000);
 
         const es = new EventSource(`${API}/api/v1/alerts/stream`, { withCredentials: true });
         es.addEventListener('connect', () => setConnected(true));
@@ -88,7 +142,8 @@ function Dashboard() {
 
         return () => {
             es.close();
-            clearInterval(interval);
+            clearInterval(topIpInterval);
+            clearInterval(logInterval);
         };
     }, []);
 
@@ -146,6 +201,60 @@ function Dashboard() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </section>
+
+                <section className="section">
+                    <h2 className="section-title">
+                        실시간 로그 스트림
+                        <span className="log-count">최근 {recentLogs.length}건</span>
+                    </h2>
+                    <div className="log-table-wrap">
+                        {recentLogs.length === 0
+                            ? <div className="empty">수집된 로그가 없습니다</div>
+                            : (
+                                <table className="log-table">
+                                    <thead>
+                                        <tr>
+                                            <th>시각</th>
+                                            <th>소스 IP</th>
+                                            <th>메서드</th>
+                                            <th>경로</th>
+                                            <th>상태</th>
+                                            <th>크기</th>
+                                            <th>User Agent</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {recentLogs.map((log, idx) => (
+                                            <tr key={log.id ?? idx}
+                                                className={newLogIds.has(log.id) ? 'log-row-new' : ''}>
+                                                <td className="log-time">{formatTime(log.occurredAt)}</td>
+                                                <td className="log-ip">{log.srcIp ?? '-'}</td>
+                                                <td>
+                                                    <span className="method-badge"
+                                                          style={{ background: METHOD_COLORS[log.method] ?? '#475569' }}>
+                                                        {log.method ?? '-'}
+                                                    </span>
+                                                </td>
+                                                <td className="log-uri" title={log.requestUri}>
+                                                    {log.requestUri ?? '-'}
+                                                </td>
+                                                <td>
+                                                    <span className={`status-badge ${statusClass(log.statusCode)}`}>
+                                                        {log.statusCode ?? '-'}
+                                                    </span>
+                                                </td>
+                                                <td className="log-bytes">{formatBytes(log.responseBytes)}</td>
+                                                <td className="log-ua" title={log.userAgent}>
+                                                    {log.userAgent ?? '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )
+                        }
                     </div>
                 </section>
             </main>
