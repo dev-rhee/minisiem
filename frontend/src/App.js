@@ -94,6 +94,13 @@ function Dashboard() {
     const [newLogIds, setNewLogIds]   = useState(new Set());
     const lastFetchRef = useRef(null);
 
+    const [filterIp,     setFilterIp]     = useState('');
+    const [filterMethod, setFilterMethod] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [filterUri,    setFilterUri]    = useState('');
+    const [searchResults, setSearchResults] = useState(null); // null = 실시간 모드
+    const [searching,    setSearching]    = useState(false);
+
     const fetchTopIps = () => {
         fetch(`${API}/api/v1/logs/stats/top-ips`, { credentials: 'include' })
             .then(res => res.json())
@@ -146,6 +153,29 @@ function Dashboard() {
             clearInterval(logInterval);
         };
     }, []);
+
+    const searchLogs = async (e) => {
+        e?.preventDefault();
+        setSearching(true);
+        try {
+            const params = new URLSearchParams({ limit: 200 });
+            if (filterIp.trim())     params.set('srcIp',      filterIp.trim());
+            if (filterMethod)        params.set('method',      filterMethod);
+            if (filterStatus)        params.set('statusClass', filterStatus);
+            if (filterUri.trim())    params.set('uri',         filterUri.trim());
+            const res = await fetch(`${API}/api/v1/logs/search?${params}`, { credentials: 'include' });
+            if (res.ok) setSearchResults(await res.json());
+        } catch {}
+        setSearching(false);
+    };
+
+    const resetSearch = () => {
+        setFilterIp('');
+        setFilterMethod('');
+        setFilterStatus('');
+        setFilterUri('');
+        setSearchResults(null);
+    };
 
     const updateAlertStatus = async (id, newStatus) => {
         try {
@@ -235,12 +265,52 @@ function Dashboard() {
 
                 <section className="section">
                     <h2 className="section-title">
-                        실시간 로그 스트림
-                        <span className="log-count">최근 {recentLogs.length}건</span>
+                        {searchResults ? '로그 검색 결과' : '실시간 로그 스트림'}
+                        <span className="log-count">
+                            {searchResults ? `${searchResults.length}건` : `최근 ${recentLogs.length}건`}
+                        </span>
                     </h2>
+
+                    <form className="log-filter" onSubmit={searchLogs}>
+                        <input
+                            className="filter-input"
+                            placeholder="소스 IP"
+                            value={filterIp}
+                            onChange={e => setFilterIp(e.target.value)}
+                        />
+                        <select className="filter-select" value={filterMethod} onChange={e => setFilterMethod(e.target.value)}>
+                            <option value="">메서드 전체</option>
+                            {['GET','POST','PUT','DELETE','PATCH'].map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                        <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                            <option value="">상태코드 전체</option>
+                            {['2xx','3xx','4xx','5xx'].map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                        <input
+                            className="filter-input filter-uri"
+                            placeholder="URI 포함 검색"
+                            value={filterUri}
+                            onChange={e => setFilterUri(e.target.value)}
+                        />
+                        <button type="submit" className="btn-search" disabled={searching}>
+                            {searching ? '검색 중...' : '검색'}
+                        </button>
+                        {searchResults && (
+                            <button type="button" className="btn-reset" onClick={resetSearch}>
+                                초기화
+                            </button>
+                        )}
+                    </form>
+
                     <div className="log-table-wrap">
-                        {recentLogs.length === 0
-                            ? <div className="empty">수집된 로그가 없습니다</div>
+                        {(searchResults ?? recentLogs).length === 0
+                            ? <div className="empty">
+                                {searchResults ? '검색 결과가 없습니다' : '수집된 로그가 없습니다'}
+                              </div>
                             : (
                                 <table className="log-table">
                                     <thead>
@@ -255,9 +325,9 @@ function Dashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {recentLogs.map((log, idx) => (
+                                        {(searchResults ?? recentLogs).map((log, idx) => (
                                             <tr key={log.id ?? idx}
-                                                className={newLogIds.has(log.id) ? 'log-row-new' : ''}>
+                                                className={!searchResults && newLogIds.has(log.id) ? 'log-row-new' : ''}>
                                                 <td className="log-time">{formatTime(log.occurredAt)}</td>
                                                 <td className="log-ip">{log.srcIp ?? '-'}</td>
                                                 <td>

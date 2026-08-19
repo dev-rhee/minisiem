@@ -1,5 +1,6 @@
 package com.minisiem.domain;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -52,6 +53,28 @@ public interface LogEventRepository extends JpaRepository<LogEvent, Long> {
             @Param("srcIp") String srcIp,
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to
+    );
+
+    @Query("""
+        SELECT l FROM LogEvent l
+        WHERE (:srcIp IS NULL OR l.srcIp = :srcIp)
+          AND (:method IS NULL OR l.method = :method)
+          AND (:statusMin IS NULL OR l.statusCode >= :statusMin)
+          AND (:statusMax IS NULL OR l.statusCode <= :statusMax)
+          AND (:uri IS NULL OR LOWER(l.requestUri) LIKE LOWER(CONCAT('%', :uri, '%')))
+          AND (:from IS NULL OR l.occurredAt >= :from)
+          AND (:to IS NULL OR l.occurredAt <= :to)
+        ORDER BY l.occurredAt DESC
+        """)
+    List<LogEvent> search(
+            @Param("srcIp") String srcIp,
+            @Param("method") String method,
+            @Param("statusMin") Integer statusMin,
+            @Param("statusMax") Integer statusMax,
+            @Param("uri") String uri,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            Pageable pageable
     );
 
     interface IpCountResult {

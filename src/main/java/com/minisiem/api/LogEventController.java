@@ -76,6 +76,41 @@ public class LogEventController {
         return ResponseEntity.ok(logEventRepository.findAll(pageable).getContent());
     }
 
+    @GetMapping("/search")
+    @Operation(summary = "로그 검색", description = "IP, 메서드, 상태코드 분류(2xx/3xx/4xx/5xx), URI로 로그를 필터링합니다.")
+    public ResponseEntity<List<LogEvent>> search(
+            @RequestParam(required = false) String srcIp,
+            @RequestParam(required = false) String method,
+            @RequestParam(required = false) String statusClass,
+            @RequestParam(required = false) String uri,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(defaultValue = "200") int limit
+    ) {
+        Integer statusMin = null, statusMax = null;
+        if (statusClass != null && !statusClass.isBlank()) {
+            statusMin = switch (statusClass) {
+                case "2xx" -> 200;
+                case "3xx" -> 300;
+                case "4xx" -> 400;
+                case "5xx" -> 500;
+                default    -> null;
+            };
+            statusMax = statusMin != null ? statusMin + 99 : null;
+        }
+
+        Pageable pageable = PageRequest.of(0, limit, Sort.by("occurredAt").descending());
+        return ResponseEntity.ok(logEventRepository.search(
+                blank(srcIp), blank(method), statusMin, statusMax, blank(uri), from, to, pageable
+        ));
+    }
+
+    private static String blank(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
     @GetMapping("/stats/top-ips")
     @Operation(summary = "Top IP 통계", description = "요청 수 기준 상위 10개 IP를 반환합니다.")
     public ResponseEntity<List<Map<String, Object>>> getTopIps() {
