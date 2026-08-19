@@ -7,4 +7,10 @@ spring:
 
 siem:
   log:
-    watch-dir: ${SIEM_LOG_WATCH_DIR}
+    sources:
+      - path: /var/log/app
+        type: NGINX
+        pattern: "*.log"
+  admin:
+    username: ${SIEM_ADMIN_USERNAME}
+    password: ${SIEM_ADMIN_PASSWORD}
