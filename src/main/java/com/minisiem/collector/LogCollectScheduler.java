@@ -18,8 +18,9 @@ public class LogCollectScheduler {
     private final JobLauncher jobLauncher;
     private final Job collectLogJob;
 
-    @Scheduled(fixedDelay = 30_000) // 30초마다 실행
+    @Scheduled(fixedDelay = 60_000) // 60초마다 실행
     public void run() {
+        log.info("로그 수집 배치 시작");
         try {
             JobParameters params = new JobParametersBuilder()
                     .addLong("run.at", System.currentTimeMillis())
