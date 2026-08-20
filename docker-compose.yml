@@ -34,6 +34,7 @@ services:
       SIEM_LOG_WATCH_DIR: /var/log/app
       SIEM_ADMIN_USERNAME: ${SIEM_ADMIN_USERNAME}
       SIEM_ADMIN_PASSWORD: ${SIEM_ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "8080:8080"
     volumes:
