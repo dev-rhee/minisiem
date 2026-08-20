@@ -29,3 +29,8 @@ siem:
   admin:
     username: admin
     password: admin1234
+
+jwt:
+  secret: "testOnlySecretKey256bitsLongEnoughForHS256AlgorithmTestXX"
+  access-expiry-ms: 1800000
+  refresh-expiry-ms: 604800000
