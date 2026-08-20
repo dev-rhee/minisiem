@@ -27,6 +27,18 @@
 .status.connected { color: #22c55e; }
 .status.disconnected { color: #ef4444; }
 
+.btn-logout {
+    background: transparent;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #64748b;
+    font-size: 12px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-logout:hover { border-color: #ef4444; color: #ef4444; }
+
 .main {
     flex: 1;
     padding: 24px;
@@ -144,6 +156,63 @@
 }
 
 /* 실시간 로그 테이블 */
+.log-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.log-filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.log-filter-item label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.log-filter-item select,
+.log-filter-item input[type="text"],
+.log-filter-item input[type="datetime-local"] {
+    background: #1e2130;
+    border: 1px solid #2d3148;
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: #e2e8f0;
+    font-size: 13px;
+    outline: none;
+    height: 34px;
+}
+
+.log-filter-item select { width: 160px; cursor: pointer; }
+.log-filter-item input[type="datetime-local"] { width: 180px; color-scheme: dark; }
+.log-filter-url input[type="text"] { width: 220px; }
+
+.log-filter-item select:focus,
+.log-filter-item input:focus { border-color: #4f6ef7; }
+
+.log-filter-item input::placeholder { color: #475569; }
+
+.log-filter-reset {
+    height: 34px;
+    padding: 0 14px;
+    background: transparent;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    align-self: flex-end;
+}
+.log-filter-reset:hover { border-color: #ef4444; color: #ef4444; }
+
 .log-count {
     font-size: 12px;
     font-weight: 400;

@@ -1,76 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TopIpChart from './components/TopIpChart';
 import AlertStats from './components/AlertStats';
 import './App.css';
 
 const API = 'http://localhost:8080';
-const AUTH_KEY = 'siem_auth';
-
-// 모든 API 요청에 Authorization 헤더를 포함하는 헬퍼
-function apiFetch(url, options = {}) {
-    const auth = sessionStorage.getItem(AUTH_KEY);
-    return fetch(url, {
-        ...options,
-        headers: {
-            ...(options.headers || {}),
-            ...(auth ? { 'Authorization': auth } : {}),
-        },
-        credentials: 'include',
-    });
-}
-
-function LoginForm({ onLogin }) {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError]       = useState('');
-    const [loading, setLoading]   = useState(false);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-
-        const auth = `Basic ${btoa(`${username}:${password}`)}`;
-        const res = await fetch(`${API}/api/v1/alerts`, {
-            headers: { 'Authorization': auth },
-            credentials: 'include',
-        }).catch(() => null);
-
-        setLoading(false);
-
-        if (res?.ok) {
-            sessionStorage.setItem(AUTH_KEY, auth);
-            onLogin();
-        } else {
-            setError('아이디 또는 비밀번호가 틀렸습니다');
-        }
-    };
-
-    return (
-        <div className="login-wrap">
-            <form className="login-form" onSubmit={handleSubmit}>
-                <h1>🛡️ Mini SIEM</h1>
-                <input
-                    type="text"
-                    placeholder="아이디"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    autoFocus
-                />
-                <input
-                    type="password"
-                    placeholder="비밀번호"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                />
-                {error && <p className="login-error">{error}</p>}
-                <button type="submit" disabled={loading}>
-                    {loading ? '로그인 중...' : '로그인'}
-                </button>
-            </form>
-        </div>
-    );
-}
 
 const METHOD_COLORS = {
     GET:    '#3b82f6',
@@ -102,137 +35,188 @@ function formatTime(s) {
     return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function Dashboard() {
-    const [alerts, setAlerts]       = useState([]);
-    const [topIps, setTopIps]       = useState([]);
-    const [connected, setConnected] = useState(false);
-    const [recentLogs, setRecentLogs] = useState([]);
-    const [newLogIds, setNewLogIds]   = useState(new Set());
-    const lastFetchRef = useRef(null);
-    const esRef        = useRef(null);
+// ── 로그인 폼 ────────────────────────────────────────────────────────────────
 
-    const [filterIp,     setFilterIp]     = useState('');
-    const [filterMethod, setFilterMethod] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
-    const [filterUri,    setFilterUri]    = useState('');
-    const [searchResults, setSearchResults] = useState(null);
-    const [searching,    setSearching]    = useState(false);
+function LoginForm({ onLogin }) {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError]       = useState('');
+    const [loading, setLoading]   = useState(false);
 
-    const fetchTopIps = () => {
-        apiFetch(`${API}/api/v1/logs/stats/top-ips`)
-            .then(res => res.json())
-            .then(setTopIps)
-            .catch(() => {});
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        const ok = await onLogin(username, password);
+        if (!ok) setError('아이디 또는 비밀번호가 틀렸습니다');
+        setLoading(false);
     };
 
-    const fetchRecentLogs = async () => {
+    return (
+        <div className="login-wrap">
+            <form className="login-form" onSubmit={handleSubmit}>
+                <h1>🛡️ Mini SIEM</h1>
+                <input
+                    type="text"
+                    placeholder="아이디"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    autoFocus
+                />
+                <input
+                    type="password"
+                    placeholder="비밀번호"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                />
+                {error && <p className="login-error">{error}</p>}
+                <button type="submit" disabled={loading}>
+                    {loading ? '로그인 중...' : '로그인'}
+                </button>
+            </form>
+        </div>
+    );
+}
+
+// ── 대시보드 ─────────────────────────────────────────────────────────────────
+
+function Dashboard({ apiFetch, tokenRef, onLogout }) {
+    const [alerts, setAlerts]         = useState([]);
+    const [topIps, setTopIps]         = useState([]);
+    const [connected, setConnected]   = useState(false);
+    const [recentLogs, setRecentLogs] = useState([]);
+    const [newLogIds, setNewLogIds]   = useState(new Set());
+    const [filter, setFilter] = useState({ method: '', status: '', from: '', to: '', url: '' });
+    const prevLogIds = useRef(null);
+
+    // Top IP 폴링
+    const fetchTopIps = useCallback(() => {
+        apiFetch(`${API}/api/v1/logs/stats/top-ips`)
+            .then(r => r.json()).then(setTopIps).catch(() => {});
+    }, [apiFetch]);
+
+    // 최근 로그 폴링
+    const fetchRecentLogs = useCallback(async () => {
         try {
             const res = await apiFetch(`${API}/api/v1/logs/recent?limit=100`);
             if (!res.ok) return;
             const data = await res.json();
 
-            if (lastFetchRef.current) {
-                const prevIds = lastFetchRef.current;
-                const fresh = new Set(data.filter(l => !prevIds.has(l.id)).map(l => l.id));
+            const ids = new Set(data.map(l => l.id));
+            if (prevLogIds.current) {
+                const fresh = new Set([...ids].filter(id => !prevLogIds.current.has(id)));
                 if (fresh.size > 0) {
                     setNewLogIds(fresh);
                     setTimeout(() => setNewLogIds(new Set()), 3000);
                 }
             }
-            lastFetchRef.current = new Set(data.map(l => l.id));
+            prevLogIds.current = ids;
             setRecentLogs(data);
         } catch {}
-    };
+    }, [apiFetch]);
 
-    // SSE 연결 (BasicAuth 요청으로 세션을 먼저 갱신한 뒤 연결)
-    const connectSSE = () => {
-        apiFetch(`${API}/api/v1/alerts`).then(res => {
-            if (!res.ok) return;
-            esRef.current?.close();
-            const es = new EventSource(`${API}/api/v1/alerts/stream`, { withCredentials: true });
-            esRef.current = es;
-            es.addEventListener('connect', () => setConnected(true));
-            es.addEventListener('alert', (e) => {
-                const alert = JSON.parse(e.data);
-                setAlerts(prev => [alert, ...prev].slice(0, 50));
-                fetchTopIps();
-            });
-            es.onerror = () => {
-                setConnected(false);
-                es.close();
-                setTimeout(connectSSE, 5000);
-            };
-        }).catch(() => setTimeout(connectSSE, 5000));
-    };
+    // fetch 기반 SSE — tokenRef.current는 항상 최신 토큰을 참조
+    useEffect(() => {
+        const controller = new AbortController();
+        let alive = true;
 
+        const connect = async () => {
+            try {
+                const token = tokenRef.current;
+                const res = await fetch(`${API}/api/v1/alerts/stream`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                    credentials: 'include',
+                    signal: controller.signal,
+                });
+                if (!res.ok || !alive) return;
+                setConnected(true);
+
+                const reader  = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer    = '';
+                let evtType   = 'message';
+
+                while (alive) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            evtType = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            const raw = line.slice(5).trim();
+                            if (evtType === 'alert' && raw) {
+                                const alert = JSON.parse(raw);
+                                setAlerts(prev => [alert, ...prev].slice(0, 50));
+                                fetchTopIps();
+                            }
+                            if (evtType === 'connect') setConnected(true);
+                        } else if (line === '') {
+                            evtType = 'message';
+                        }
+                    }
+                }
+            } catch (err) {
+                if (!controller.signal.aborted && alive) {
+                    setConnected(false);
+                    setTimeout(connect, 5000);
+                }
+            }
+        };
+
+        connect();
+        return () => { alive = false; controller.abort(); setConnected(false); };
+    }, []); // tokenRef는 ref이므로 deps 불필요
+
+    // 초기 데이터 + 폴링
     useEffect(() => {
         apiFetch(`${API}/api/v1/alerts`)
-            .then(res => res.json())
-            .then(data => setAlerts(data.slice(0, 50)))
-            .catch(() => {});
+            .then(r => r.json()).then(d => setAlerts(d.slice(0, 50))).catch(() => {});
 
         fetchTopIps();
         fetchRecentLogs();
-        const topIpInterval = setInterval(fetchTopIps, 30_000);
-        const logInterval   = setInterval(fetchRecentLogs, 5_000);
 
-        connectSSE();
+        const t1 = setInterval(fetchTopIps,     30_000);
+        const t2 = setInterval(fetchRecentLogs,  5_000);
+        return () => { clearInterval(t1); clearInterval(t2); };
+    }, [apiFetch, fetchTopIps, fetchRecentLogs]);
 
-        return () => {
-            esRef.current?.close();
-            clearInterval(topIpInterval);
-            clearInterval(logInterval);
-        };
-    }, []);
-
-    const searchLogs = async (e) => {
-        e?.preventDefault();
-        setSearching(true);
-        try {
-            const params = new URLSearchParams({ limit: 200 });
-            if (filterIp.trim())  params.set('srcIp',      filterIp.trim());
-            if (filterMethod)     params.set('method',      filterMethod);
-            if (filterStatus)     params.set('statusClass', filterStatus);
-            if (filterUri.trim()) params.set('uri',         filterUri.trim());
-            const res = await apiFetch(`${API}/api/v1/logs/search?${params}`);
-            if (res.ok) setSearchResults(await res.json());
-        } catch {}
-        setSearching(false);
-    };
-
-    const resetSearch = () => {
-        setFilterIp('');
-        setFilterMethod('');
-        setFilterStatus('');
-        setFilterUri('');
-        setSearchResults(null);
-    };
-
-    const updateAlertStatus = async (id, newStatus) => {
-        try {
-            const res = await apiFetch(
-                `${API}/api/v1/alerts/${id}/status?status=${newStatus}`,
-                { method: 'PATCH' }
-            );
-            if (!res.ok) return;
-            const updated = await res.json();
-            setAlerts(prev => prev.map(a => a.id === id ? updated : a));
-        } catch {}
-    };
-
-    const severityColor = (s) => ({
-        CRITICAL: '#ef4444',
-        HIGH:     '#f97316',
-        MEDIUM:   '#eab308',
-        LOW:      '#22c55e',
+    const severityColor = s => ({
+        CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e',
     }[s] || '#94a3b8');
+
+    const setF = (key, val) => setFilter(f => ({ ...f, [key]: val }));
+
+    const filteredLogs = recentLogs.filter(l => {
+        if (filter.method && l.method !== filter.method) return false;
+        if (filter.status) {
+            const c = l.statusCode ?? 0;
+            if (filter.status === '2xx' && (c < 200 || c >= 300)) return false;
+            if (filter.status === '3xx' && (c < 300 || c >= 400)) return false;
+            if (filter.status === '4xx' && (c < 400 || c >= 500)) return false;
+            if (filter.status === '5xx' && c < 500) return false;
+            if (/^\d+$/.test(filter.status) && c !== Number(filter.status)) return false;
+        }
+        if (filter.from && new Date(l.occurredAt) < new Date(filter.from)) return false;
+        if (filter.to   && new Date(l.occurredAt) > new Date(filter.to))   return false;
+        if (filter.url  && !l.requestUri?.toLowerCase().includes(filter.url.toLowerCase())) return false;
+        return true;
+    });
+    const isFiltered = Object.values(filter).some(v => v !== '');
 
     return (
         <div className="app">
             <header className="header">
                 <h1>🛡️ Mini SIEM</h1>
-                <div className={`status ${connected ? 'connected' : 'disconnected'}`}>
-                    {connected ? '● 실시간 연결됨' : '○ 연결 끊김'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div className={`status ${connected ? 'connected' : 'disconnected'}`}>
+                        {connected ? '● 실시간 연결됨' : '○ 연결 끊김'}
+                    </div>
+                    <button className="btn-logout" onClick={onLogout}>로그아웃</button>
                 </div>
             </header>
 
@@ -254,8 +238,7 @@ function Dashboard() {
                     <div className="alert-list">
                         {alerts.length === 0 && <div className="empty">경보가 없습니다</div>}
                         {alerts.map((alert, idx) => (
-                            <div key={alert.id ?? idx}
-                                 className={`alert-card${alert.status === 'RESOLVED' ? ' alert-resolved' : ''}`}>
+                            <div key={alert.id ?? idx} className="alert-card">
                                 <div className="alert-header">
                                     <span className="severity-badge"
                                           style={{ background: severityColor(alert.severity) }}>
@@ -271,23 +254,7 @@ function Dashboard() {
                                 <div className="alert-body">
                                     <span>IP: {alert.srcIp ?? '-'}</span>
                                     <span>발생 건수: {alert.occurredCount}</span>
-                                    <span className={`alert-status alert-status-${alert.status}`}>
-                                        {alert.status}
-                                    </span>
-                                    <div className="alert-actions">
-                                        {alert.status === 'OPEN' && (
-                                            <button className="btn-ack"
-                                                    onClick={() => updateAlertStatus(alert.id, 'ACKNOWLEDGED')}>
-                                                확인
-                                            </button>
-                                        )}
-                                        {alert.status === 'ACKNOWLEDGED' && (
-                                            <button className="btn-resolve"
-                                                    onClick={() => updateAlertStatus(alert.id, 'RESOLVED')}>
-                                                해결
-                                            </button>
-                                        )}
-                                    </div>
+                                    <span>상태: {alert.status}</span>
                                 </div>
                             </div>
                         ))}
@@ -296,51 +263,60 @@ function Dashboard() {
 
                 <section className="section">
                     <h2 className="section-title">
-                        {searchResults ? '로그 검색 결과' : '실시간 로그 스트림'}
+                        실시간 로그 스트림
                         <span className="log-count">
-                            {searchResults ? `${searchResults.length}건` : `최근 ${recentLogs.length}건`}
+                            {filteredLogs.length}{isFiltered ? `/${recentLogs.length}` : ''}건
                         </span>
                     </h2>
-
-                    <form className="log-filter" onSubmit={searchLogs}>
-                        <input
-                            className="filter-input"
-                            placeholder="소스 IP"
-                            value={filterIp}
-                            onChange={e => setFilterIp(e.target.value)}
-                        />
-                        <select className="filter-select" value={filterMethod} onChange={e => setFilterMethod(e.target.value)}>
-                            <option value="">메서드 전체</option>
-                            {['GET','POST','PUT','DELETE','PATCH'].map(m => (
-                                <option key={m} value={m}>{m}</option>
-                            ))}
-                        </select>
-                        <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                            <option value="">상태코드 전체</option>
-                            {['2xx','3xx','4xx','5xx'].map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                        <input
-                            className="filter-input filter-uri"
-                            placeholder="URI 포함 검색"
-                            value={filterUri}
-                            onChange={e => setFilterUri(e.target.value)}
-                        />
-                        <button type="submit" className="btn-search" disabled={searching}>
-                            {searching ? '검색 중...' : '검색'}
-                        </button>
-                        {searchResults && (
-                            <button type="button" className="btn-reset" onClick={resetSearch}>
+                    <div className="log-filter-bar">
+                        <div className="log-filter-item">
+                            <label>메서드</label>
+                            <select value={filter.method} onChange={e => setF('method', e.target.value)}>
+                                <option value="">전체</option>
+                                {['GET','POST','PUT','DELETE','PATCH'].map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="log-filter-item">
+                            <label>상태코드</label>
+                            <select value={filter.status} onChange={e => setF('status', e.target.value)}>
+                                <option value="">전체</option>
+                                <option value="2xx">2xx 성공</option>
+                                <option value="3xx">3xx 리다이렉트</option>
+                                <option value="4xx">4xx 클라이언트 오류</option>
+                                <option value="5xx">5xx 서버 오류</option>
+                                {[400,401,403,404,500,502,503].map(c => (
+                                    <option key={c} value={String(c)}>{c}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="log-filter-item">
+                            <label>시각 (시작)</label>
+                            <input type="datetime-local" value={filter.from}
+                                   onChange={e => setF('from', e.target.value)} />
+                        </div>
+                        <div className="log-filter-item">
+                            <label>시각 (종료)</label>
+                            <input type="datetime-local" value={filter.to}
+                                   onChange={e => setF('to', e.target.value)} />
+                        </div>
+                        <div className="log-filter-item log-filter-url">
+                            <label>URL</label>
+                            <input type="text" placeholder="경로 검색..." value={filter.url}
+                                   onChange={e => setF('url', e.target.value)} />
+                        </div>
+                        {isFiltered && (
+                            <button className="log-filter-reset"
+                                    onClick={() => setFilter({ method:'', status:'', from:'', to:'', url:'' })}>
                                 초기화
                             </button>
                         )}
-                    </form>
-
+                    </div>
                     <div className="log-table-wrap">
-                        {(searchResults ?? recentLogs).length === 0
+                        {filteredLogs.length === 0
                             ? <div className="empty">
-                                {searchResults ? '검색 결과가 없습니다' : '수집된 로그가 없습니다'}
+                                {isFiltered ? '검색 결과가 없습니다' : '수집된 로그가 없습니다'}
                               </div>
                             : (
                                 <table className="log-table">
@@ -356,9 +332,9 @@ function Dashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {(searchResults ?? recentLogs).map((log, idx) => (
+                                        {filteredLogs.map((log, idx) => (
                                             <tr key={log.id ?? idx}
-                                                className={!searchResults && newLogIds.has(log.id) ? 'log-row-new' : ''}>
+                                                className={newLogIds.has(log.id) ? 'log-row-new' : ''}>
                                                 <td className="log-time">{formatTime(log.occurredAt)}</td>
                                                 <td className="log-ip">{log.srcIp ?? '-'}</td>
                                                 <td>
@@ -392,26 +368,93 @@ function Dashboard() {
     );
 }
 
+// ── 루트 ─────────────────────────────────────────────────────────────────────
+
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [checking, setChecking]     = useState(true);
+    const tokenRef = useRef(null);
 
-    useEffect(() => {
-        const auth = sessionStorage.getItem(AUTH_KEY);
-        if (!auth) { setChecking(false); return; }
-
-        fetch(`${API}/api/v1/alerts`, {
-            headers: { 'Authorization': auth },
-            credentials: 'include',
-        })
-            .then(res => { if (res.ok) setIsLoggedIn(true); })
-            .catch(() => {})
-            .finally(() => setChecking(false));
+    const forceLogout = useCallback(() => {
+        tokenRef.current = null;
+        setIsLoggedIn(false);
     }, []);
 
-    if (checking) return null;
+    const tryRefresh = useCallback(async () => {
+        try {
+            const res = await fetch(`${API}/auth/refresh`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (res.ok) {
+                const { accessToken } = await res.json();
+                tokenRef.current = accessToken;
+                return true;
+            }
+        } catch {}
+        return false;
+    }, []);
 
+    // 401 발생 시 자동 재발급 후 재시도
+    const apiFetch = useCallback(async (url, opts = {}) => {
+        const doFetch = (token) => fetch(url, {
+            ...opts,
+            headers: {
+                ...opts.headers,
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            credentials: 'include',
+        });
+
+        let res = await doFetch(tokenRef.current);
+        if (res.status === 401) {
+            const ok = await tryRefresh();
+            if (ok) {
+                res = await doFetch(tokenRef.current);
+            } else {
+                forceLogout();
+            }
+        }
+        return res;
+    }, [tryRefresh, forceLogout]);
+
+    const handleLogin = useCallback(async (username, password) => {
+        try {
+            const res = await fetch(`${API}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                credentials: 'include',
+            });
+            if (res.ok) {
+                const { accessToken } = await res.json();
+                tokenRef.current = accessToken;
+                setIsLoggedIn(true);
+                return true;
+            }
+        } catch {}
+        return false;
+    }, []);
+
+    const handleLogout = useCallback(async () => {
+        try {
+            await fetch(`${API}/auth/logout`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+        } catch {}
+        forceLogout();
+    }, [forceLogout]);
+
+    // 새로고침 시 refreshToken 쿠키로 자동 재인증
+    useEffect(() => {
+        tryRefresh()
+            .then(ok => { if (ok) setIsLoggedIn(true); })
+            .finally(() => setChecking(false));
+    }, [tryRefresh]);
+
+    if (checking) return null;
     return isLoggedIn
-        ? <Dashboard />
-        : <LoginForm onLogin={() => setIsLoggedIn(true)} />;
+        ? <Dashboard apiFetch={apiFetch} tokenRef={tokenRef} onLogout={handleLogout} />
+        : <LoginForm onLogin={handleLogin} />;
 }
